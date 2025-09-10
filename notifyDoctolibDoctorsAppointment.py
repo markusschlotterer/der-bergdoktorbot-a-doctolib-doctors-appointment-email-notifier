@@ -1,11 +1,19 @@
 from datetime import date, datetime, timedelta
 import json
+import os
 import urllib.parse
 import urllib.request
+import smtplib, ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-TELEGRAM_BOT_TOKEN = ''
-TELEGRAM_CHAT_ID = ''
-BOOKING_URL = 'https://www.doctolib.de/'
+port = 587  # For starttls
+smtp_server = ''
+sender_email = ''
+password = ''
+receiver_email = ''
+
+BOOKING_URL = ''
 AVAILABILITIES_URL = ''
 APPOINTMENT_NAME = None
 MOVE_BOOKING_URL = None
@@ -13,11 +21,14 @@ UPCOMING_DAYS = 15
 MAX_DATETIME_IN_FUTURE = datetime.today() + timedelta(days = UPCOMING_DAYS)
 NOTIFY_HOURLY = False
 
+# Read parameters from private file
+myData = 'myData.py'
+if os.path.exists(myData): 
+    exec(compile(source=open(myData).read(), filename=myData, mode='exec'))
+
 if not (
-    TELEGRAM_BOT_TOKEN
-    or TELEGRAM_CHAT_ID
-    or BOOKING_URL
-    or AVAILABILITIES_URL
+    BOOKING_URL
+    and AVAILABILITIES_URL
     ) or UPCOMING_DAYS > 15:
     exit()
 
@@ -86,15 +97,35 @@ if isHourlyNotificationDue:
 
 message += f'Book now on <a href="{BOOKING_URL}">doctolib.de</a>.'
 
-urlEncodedMessage = (urllib
-                        .parse
-                        .quote(message))
-(urllib
-    .request
-    .urlopen(
-        (f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
-        f'?chat_id={TELEGRAM_CHAT_ID}'
-        f'&text={urlEncodedMessage}'
-        f'&parse_mode=HTML'
-        f'&disable_web_page_preview=true')
-    ))
+html = message
+
+message = MIMEMultipart("alternative")
+message["Subject"] = "New slots in " + APPOINTMENT_NAME + " on doctolib.de"
+message["From"] = sender_email
+message["To"] = receiver_email
+
+# Turn these into plain/html MIMEText objects
+#part1 = MIMEText(text, "plain")
+part2 = MIMEText(html, "html")
+
+# Add HTML/plain-text parts to MIMEMultipart message
+# The email client will try to render the last part first
+#message.attach(part1)
+message.attach(part2)
+
+# Create a secure SSL context
+context = ssl.create_default_context()
+
+# Try to log in to server and send email
+try:
+    server = smtplib.SMTP(smtp_server,port)
+    server.ehlo() # Can be omitted
+    server.starttls(context=context) # Secure the connection
+    server.ehlo() # Can be omitted
+    server.login(sender_email, password)
+    server.sendmail(sender_email, receiver_email, message.as_string())
+except Exception as e:
+    # Print any error messages to stdout
+    print(e)
+finally:
+    server.quit() 
